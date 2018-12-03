@@ -11,6 +11,7 @@ TESTS=		tests/test1 \
                 tests/test3 \
                 tests/test4 \
 				tests/bfwf \
+				tests/bench2 \
 				tests/ffnf
 
 

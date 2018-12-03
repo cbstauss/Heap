@@ -85,6 +85,9 @@ struct block *findFreeBlock(struct block **last, size_t size)
    struct block *lowPtr;
    while (curr && !(curr->free && curr->size > size))
    {
+      if (curr->next)
+      {
+      }
       *last = curr;
       curr = curr->next;
    }
@@ -220,7 +223,7 @@ struct block *growHeap(struct block *last, size_t size)
  */
 void *malloc(size_t size) 
 {
-   num_requested += size;
+   num_requested += (int)size;
    if( atexit_registered == 0 )
    {
       atexit_registered = 1;
@@ -244,6 +247,11 @@ void *malloc(size_t size)
    if (next)
    {
       num_reuses++;
+      int nullFlag = 0;
+      if (next->next == NULL)
+      {
+         nullFlag = 1;
+      }
       if (next->size > size)
       {
          num_splits++;
@@ -253,14 +261,17 @@ void *malloc(size_t size)
          split->size = splitSize;
          next->size = size;
          split->next = next->next;
-         next->next = split;;
+         next->next = split;
          num_splits++;
+         if (nullFlag == 1)
+         {
+            split->next = NULL;
+         }
       }
    }
    /* Could not find free block, so grow heap */
    else if (next == NULL) 
    {
-      num_requested;
       next = growHeap(last, size);
    }
 
