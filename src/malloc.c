@@ -53,6 +53,7 @@ struct block
 
 
 struct block *FreeList = NULL; /* Free list to track the blocks available */
+struct block *listPos = NULL; /* Pointer for next-fit to keep track of where it left off */
 
 /*
  * \brief findFreeBlock
@@ -80,15 +81,77 @@ struct block *findFreeBlock(struct block **last, size_t size)
 #endif
 
 #if defined BEST && BEST == 0
-   printf("TODO: Implement best fit here\n");
+   size_t lowest;
+   struct block *lowPtr;
+   while (curr && !(curr->free && curr->size > size))
+   {
+      *last = curr;
+      curr = curr->next;
+   }
+   if (curr)
+   {
+      lowest = curr->size;
+      lowPtr = curr;
+      while (curr)
+      {
+         if (curr->free && size < curr->size < lowest)
+         {
+            lowest = curr->size;
+            lowPtr = curr;
+         }
+         *last = curr;
+         curr = curr->next;
+      }
+      curr = lowPtr;
+   }
+   
 #endif
 
 #if defined WORST && WORST == 0
-   printf("TODO: Implement worst fit here\n");
+   size_t largest;
+   struct block *hiPtr;
+   while (curr && !(curr->free && curr->size > size))
+   {
+      *last = curr;
+      curr = curr->next;
+   }
+   if (curr)
+   {
+      largest = curr->size;
+      hiPtr = curr;
+      while (curr)
+      {
+         if (curr->free && curr->size > largest)
+         {
+            largest = curr->size;
+            hiPtr = curr;
+         }
+         *last = curr;
+         curr = curr->next;
+      }
+      curr = hiPtr;
+   }
 #endif
 
 #if defined NEXT && NEXT == 0
-   printf("TODO: Implement next fit here\n");
+   curr = listPos;
+   int wrapFlag = 0;
+   while (curr && !(curr->free && curr->size >= size)) 
+   {
+      if (!curr->next && !(curr == listPos && wrapFlag == 1))
+      {
+         *last = curr;
+         curr = FreeList;
+         wrapFlag = 1;
+      }
+      else if (curr == listPos && wrapFlag == 1)
+      {
+         curr = NULL;
+      }
+      else{
+         curr = curr->next;
+      }
+   }
 #endif
 
    return curr;
@@ -108,6 +171,8 @@ struct block *findFreeBlock(struct block **last, size_t size)
  */
 struct block *growHeap(struct block *last, size_t size) 
 {
+   max_heap += size;
+   num_grows++;
    /* Request more space from OS */
    struct block *curr = (struct block *)sbrk(0);
    struct block *prev = (struct block *)sbrk(sizeof(struct block) + size);
@@ -124,6 +189,7 @@ struct block *growHeap(struct block *last, size_t size)
    if (FreeList == NULL) 
    {
       FreeList = curr;
+      listPos = curr;
    }
 
    /* Attach new block to prev block */
@@ -136,6 +202,7 @@ struct block *growHeap(struct block *last, size_t size)
    curr->size = size;
    curr->next = NULL;
    curr->free = false;
+   num_blocks++;
    return curr;
 }
 
@@ -153,7 +220,7 @@ struct block *growHeap(struct block *last, size_t size)
  */
 void *malloc(size_t size) 
 {
-
+   num_requested += size;
    if( atexit_registered == 0 )
    {
       atexit_registered = 1;
@@ -174,10 +241,26 @@ void *malloc(size_t size)
    struct block *next = findFreeBlock(&last, size);
 
    /* TODO: Split free block if possible */
-
-   /* Could not find free block, so grow heap */
-   if (next == NULL) 
+   if (next)
    {
+      num_reuses++;
+      if (next->size > size)
+      {
+         num_splits++;
+         num_blocks++;
+         struct block *split;
+         size_t splitSize = next->size - size;
+         split->size = splitSize;
+         next->size = size;
+         split->next = next->next;
+         next->next = split;;
+         num_splits++;
+      }
+   }
+   /* Could not find free block, so grow heap */
+   else if (next == NULL) 
+   {
+      num_requested;
       next = growHeap(last, size);
    }
 
@@ -186,11 +269,11 @@ void *malloc(size_t size)
    {
       return NULL;
    }
-   
    /* Mark block as in use */
    next->free = false;
 
    /* Return data address associated with block */
+   num_mallocs++;
    return BLOCK_DATA(next);
 }
 
@@ -215,8 +298,51 @@ void free(void *ptr)
    struct block *curr = BLOCK_HEADER(ptr);
    assert(curr->free == 0);
    curr->free = true;
+   num_frees++;
 
    /* TODO: Coalesce free blocks if needed */
+   struct block *combine = FreeList;
+   if (combine && combine->next)
+   {
+      while (combine->next && combine->next < curr)
+      {
+         combine = combine->next;
+      }
+      if (combine->next)
+      {
+         if (combine->free && combine != curr)
+         {
+            combine->size += curr->size;
+            combine->next = curr->next;
+            num_coalesces++;
+            num_blocks--;
+         }
+         if (combine->free && combine->next)
+         {
+            if (combine->next->free)
+            {
+               combine->size = combine->size + combine->next->size;
+               combine->next = combine->next->next;
+               num_coalesces++;
+               num_blocks--;
+            }
+         }
+         else
+         {
+            if (combine && combine->next)
+            {
+               combine = combine->next;
+               if (combine->next && combine->next->free)
+               {
+                  combine->size += combine->next->size;
+                  combine->next = combine->next->next;
+                  num_coalesces++;
+                  num_blocks--;
+               }
+            }
+         }
+      }
+   }
 }
 
 /* vim: set expandtab sts=3 sw=3 ts=6 ft=cpp: --------------------------------*/
